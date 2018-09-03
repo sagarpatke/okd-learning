@@ -1,0 +1,75 @@
+---
+- hosts: all
+  become: yes
+  pre_tasks:
+    - name: Install docker
+      package:
+        name: docker
+        state: present
+    - name: Create docker group
+      group:
+        name: docker
+        state: present
+        system: yes
+      notify: Restart Docker Service
+    - name: Add vagrant as Docker User
+      user:
+        name: vagrant
+        append: yes
+        groups:
+          - docker
+    - name: Configure Docker Registries
+      template:
+        src: etc/containers/registries.conf
+        dest: /etc/containers/registries.conf
+        mode: 0644
+        owner: root
+        group: root
+    - name: Configure Docker Registries
+      template:
+        src: etc/docker/daemon.json
+        dest: /etc/docker/daemon.json
+        mode: 0644
+        owner: root
+        group: root
+      notify: Restart Docker Service
+    - name: Start Docker Service
+      service:
+        name: docker
+        state: started
+        enabled: yes
+    - name: Starting firewalld
+      service:
+        name: firewalld
+        state: started
+        enabled: yes
+    - name: Creating dockerc firewall zone
+      firewalld:
+        permanent: yes
+        zone: dockerc
+        state: present
+      notify: Reload firewalld
+    - name: ensuring sysctl net.ipv4.ip_forward is set to 1
+      firewalld:
+        permanent: yes
+        zone: dockerc
+        source: 172.17.0.0/16
+        port: "{{ item }}"
+        state: enabled
+      with_items:
+        - 8443/tcp
+        - 53/udp
+        - 8053/udp
+      notify: Reload firewalld
+  roles:
+    - role: andrewrothstein.openshift-origin-client-tools
+  handlers:
+    - name: Restart Docker Service
+      service:
+        name: docker
+        state: restarted
+    - name: Reload firewalld
+      systemd:
+        name: firewalld
+        state: restarted
+        daemon_reload: yes
